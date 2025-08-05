@@ -25,7 +25,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# CSS tùy chỉnh
+# CSS tùy chỉnh với SVG Icons
 st.markdown("""
 <style>
     .main-header {
@@ -44,9 +44,16 @@ st.markdown("""
     .sidebar .sidebar-content {
         background-color: #f8f9fa;
     }
-    .icon {
-        margin-right: 0.5rem;
-        font-size: 1.1em;
+    .svg-icon {
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        margin-right: 8px;
+        vertical-align: middle;
+    }
+    .svg-icon svg {
+        width: 100%;
+        height: 100%;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -165,6 +172,51 @@ def load_data():
                 if not mode_value.empty:
                     df[column] = df[column].fillna(mode_value[0])
         
+        # Bỏ cột Id
+        df = df.drop('Id', axis=1)
+        
+        return df
+    except Exception as e:
+        st.error(f"Lỗi khi tải dữ liệu: {e}")
+        return None
+
+@st.cache_data
+def load_train_data():
+    """Tải dữ liệu train.csv cho mô hình dự đoán"""
+    try:
+        # Tải dữ liệu train.csv như trong notebook
+        df = pd.read_csv("train.csv")
+        
+        # Xử lý dữ liệu thiếu
+        for column in df.columns:
+            if df[column].dtype in ['int64', 'float64']:
+                df[column] = df[column].fillna(df[column].median())
+            else:
+                mode_value = df[column].mode()
+                if not mode_value.empty:
+                    df[column] = df[column].fillna(mode_value[0])
+        
+        return df
+    except Exception as e:
+        st.error(f"Lỗi khi tải dữ liệu train.csv: {e}")
+        return None
+
+@st.cache_data
+def load_data_encoded():
+    """Tải dữ liệu đã được label encoding cho modeling"""
+    try:
+        # Tải dữ liệu
+        df = pd.read_csv("house_price.csv")
+        
+        # Xử lý dữ liệu thiếu
+        for column in df.columns:
+            if df[column].dtype in ['int64', 'float64']:
+                df[column] = df[column].fillna(df[column].median())
+            else:
+                mode_value = df[column].mode()
+                if not mode_value.empty:
+                    df[column] = df[column].fillna(mode_value[0])
+        
         # Label encoding cho các cột categorical
         le = LabelEncoder()
         for column in df.select_dtypes(include=['object']).columns:
@@ -177,6 +229,87 @@ def load_data():
     except Exception as e:
         st.error(f"Lỗi khi tải dữ liệu: {e}")
         return None
+
+@st.cache_data
+def load_train_data_encoded():
+    """Tải dữ liệu train.csv đã được label encoding cho modeling"""
+    try:
+        # Tải dữ liệu train.csv như trong notebook
+        df = pd.read_csv("train.csv")
+        
+        # Xử lý dữ liệu thiếu
+        for column in df.columns:
+            if df[column].dtype in ['int64', 'float64']:
+                df[column] = df[column].fillna(df[column].median())
+            else:
+                mode_value = df[column].mode()
+                if not mode_value.empty:
+                    df[column] = df[column].fillna(mode_value[0])
+        
+        # Label encoding cho các cột categorical
+        le = LabelEncoder()
+        for column in df.select_dtypes(include=['object']).columns:
+            df[column] = le.fit_transform(df[column])
+        
+        return df
+    except Exception as e:
+        st.error(f"Lỗi khi tải dữ liệu train.csv: {e}")
+        return None
+
+@st.cache_data
+def preprocess_data_for_modeling(df):
+    """Tiền xử lý dữ liệu theo notebook để modeling"""
+    # Tạo bản copy để không ảnh hưởng đến dữ liệu gốc
+    df_processed = df.copy()
+    
+    # 1. Xử lý missing values
+    for column in df_processed.columns:
+        if df_processed[column].dtype in ['int64', 'float64']:
+            median_value = df_processed[column].median()
+            df_processed[column] = df_processed[column].fillna(median_value)
+        else:
+            mode_value = df_processed[column].mode()
+            if not mode_value.empty:
+                df_processed[column] = df_processed[column].fillna(mode_value[0])
+    
+    # 2. Label Encoding cho categorical features
+    for column in df_processed.select_dtypes(include=['object']).columns:
+        le = LabelEncoder()
+        df_processed[column] = le.fit_transform(df_processed[column])
+    
+    # 3. Bỏ cột Id
+    if 'Id' in df_processed.columns:
+        df_processed = df_processed.drop('Id', axis=1)
+    
+    return df_processed
+
+@st.cache_data
+def select_features_and_split(X, y, k=25):
+    """Chọn features và chia train/test theo notebook"""
+    # Chuẩn hóa dữ liệu
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+    
+    # Chọn k features tốt nhất
+    selector = SelectKBest(score_func=mutual_info_regression, k=min(k, len(X.columns), len(X)-1))
+    X_selected = selector.fit_transform(X_scaled, y)
+    
+    # Lấy tên các features được chọn
+    selected_features = X.columns[selector.get_support()]
+    
+    # Chia dữ liệu theo notebook: 60% train, 20% validation, 20% test
+    X_train, X_temp, y_train, y_temp = train_test_split(
+        X_selected, y, test_size=0.4, random_state=42
+    )
+    
+    X_val, X_test, y_val, y_test = train_test_split(
+        X_temp, y_temp, test_size=0.5, random_state=42
+    )
+    
+    # Tạo copy để tránh lỗi numpy flags
+    return (X_train.copy(), X_val.copy(), X_test.copy(), 
+            y_train.copy(), y_val.copy(), y_test.copy(), 
+            selected_features, scaler, selector)
 
 # Tải dữ liệu
 df = load_data()
@@ -346,6 +479,16 @@ else:
     quality_filter = "Tất cả"
     year_range = (1900, 2010)
     area_range = (500, 5000)
+    neighborhood_filter = ["Tất cả"]
+    bathroom_filter = (0, 4)
+    garage_filter = (0, 4)
+    lot_area_filter = (1000, 50000)
+    basement_filter = (0, 3000)
+    garage_area_filter = (0, 1000)
+    house_style_filter = ["Tất cả"]
+    sale_condition_filter = ["Tất cả"]
+    heating_filter = ["Tất cả"]
+    cooling_filter = ["Tất cả"]
     chart_theme = "plotly"
     show_grid = True
     color_scheme = "Default"
@@ -391,6 +534,56 @@ if df is not None:
         (filtered_df['GrLivArea'] >= area_range[0]) & 
         (filtered_df['GrLivArea'] <= area_range[1])
     ]
+    
+    # Lọc theo khu vực
+    if "Tất cả" not in neighborhood_filter:
+        filtered_df = filtered_df[filtered_df['Neighborhood'].isin(neighborhood_filter)]
+    
+    # Lọc theo số phòng tắm
+    filtered_df = filtered_df[
+        (filtered_df['FullBath'] >= bathroom_filter[0]) & 
+        (filtered_df['FullBath'] <= bathroom_filter[1])
+    ]
+    
+    # Lọc theo sức chứa xe trong gara
+    filtered_df = filtered_df[
+        (filtered_df['GarageCars'] >= garage_filter[0]) & 
+        (filtered_df['GarageCars'] <= garage_filter[1])
+    ]
+    
+    # Lọc theo diện tích lô đất
+    filtered_df = filtered_df[
+        (filtered_df['LotArea'] >= lot_area_filter[0]) & 
+        (filtered_df['LotArea'] <= lot_area_filter[1])
+    ]
+    
+    # Lọc theo diện tích tầng hầm
+    filtered_df = filtered_df[
+        (filtered_df['TotalBsmtSF'] >= basement_filter[0]) & 
+        (filtered_df['TotalBsmtSF'] <= basement_filter[1])
+    ]
+    
+    # Lọc theo diện tích gara
+    filtered_df = filtered_df[
+        (filtered_df['GarageArea'] >= garage_area_filter[0]) & 
+        (filtered_df['GarageArea'] <= garage_area_filter[1])
+    ]
+    
+    # Lọc theo loại nhà
+    if "Tất cả" not in house_style_filter:
+        filtered_df = filtered_df[filtered_df['HouseStyle'].isin(house_style_filter)]
+    
+    # Lọc theo điều kiện bán
+    if "Tất cả" not in sale_condition_filter:
+        filtered_df = filtered_df[filtered_df['SaleCondition'].isin(sale_condition_filter)]
+    
+    # Lọc theo hệ thống sưởi
+    if "Tất cả" not in heating_filter:
+        filtered_df = filtered_df[filtered_df['Heating'].isin(heating_filter)]
+    
+    # Lọc theo hệ thống làm mát
+    if "Tất cả" not in cooling_filter:
+        filtered_df = filtered_df[filtered_df['CentralAir'].isin(cooling_filter)]
     
     # Thông tin tổng quan
     st.markdown("## 📊 Thông tin tổng quan")
@@ -505,38 +698,40 @@ if df is not None:
     with tab2:
         st.markdown("## 🏘️ Phân tích Khu vực")
         
-        # Mapping tên khu vực
+        # Mapping tên khu vực từ mã viết tắt sang tên đầy đủ
         neighborhood_mapping = {
-            0: "Bloomington Heights",
-            1: "Bluestem", 
-            2: "Briardale",
-            3: "Brookside",
-            4: "Clear Creek",
-            5: "College Creek",
-            6: "Crawford",
-            7: "Edwards",
-            8: "Gilbert",
-            9: "Iowa DOT and Rail Road",
-            10: "Meadow Village",
-            11: "Mitchell",
-            12: "North Ames",
-            13: "Northridge",
-            14: "Northpark Villa",
-            15: "Northridge Heights",
-            16: "Northwest Ames",
-            17: "Old Town",
-            18: "South & West of Iowa State University",
-            19: "Sawyer",
-            20: "Sawyer West",
-            21: "Somerset",
-            22: "Stone Brook",
-            23: "Timberland",
-            24: "Veenker"
+            'Blmngtn': 'Bloomington Heights',
+            'Blueste': 'Bluestem', 
+            'BrDale': 'Briardale',
+            'BrkSide': 'Brookside',
+            'ClearCr': 'Clear Creek',
+            'CollgCr': 'College Creek',
+            'Crawfor': 'Crawford',
+            'Edwards': 'Edwards',
+            'Gilbert': 'Gilbert',
+            'IDOTRR': 'Iowa DOT and Rail Road',
+            'MeadowV': 'Meadow Village',
+            'Mitchel': 'Mitchell',
+            'NAmes': 'North Ames',
+            'NoRidge': 'Northridge',
+            'NPkVill': 'Northpark Villa',
+            'NridgHt': 'Northridge Heights',
+            'NWAmes': 'Northwest Ames',
+            'OldTown': 'Old Town',
+            'SWISU': 'South & West of Iowa State University',
+            'Sawyer': 'Sawyer',
+            'SawyerW': 'Sawyer West',
+            'Somerst': 'Somerset',
+            'StoneBr': 'Stone Brook',
+            'Timber': 'Timberland',
+            'Veenker': 'Veenker'
         }
         
         # Tính giá trung bình theo khu vực
         neighborhood_prices = filtered_df.groupby('Neighborhood')['SalePrice'].mean().reset_index()
         neighborhood_prices['Neighborhood_Name'] = neighborhood_prices['Neighborhood'].map(neighborhood_mapping)
+        # Nếu không có mapping, sử dụng tên gốc
+        neighborhood_prices['Neighborhood_Name'] = neighborhood_prices['Neighborhood_Name'].fillna(neighborhood_prices['Neighborhood'])
         neighborhood_prices = neighborhood_prices.sort_values('SalePrice', ascending=False)
         
         # Tạo bar chart bằng go.Figure để có legend rõ ràng
@@ -711,173 +906,279 @@ if df is not None:
         else:
             st.info("🔗 Tùy chọn 'Hiển thị tương quan' đã được tắt. Vui lòng bật lại trong sidebar để xem phân tích tương quan.")
     
-    with tab5:
-        st.markdown("## 🤖 Mô hình Dự đoán Giá Nhà")
+        with tab5:
+            st.markdown("## 🤖 Mô hình Dự đoán Giá Nhà")
         
-        # Kiểm tra dữ liệu có đủ để huấn luyện mô hình không
-        if len(filtered_df) < 10:
-            st.warning("⚠️ Dữ liệu sau khi lọc quá ít để huấn luyện mô hình. Vui lòng mở rộng bộ lọc.")
-            st.info(f"Hiện tại có {len(filtered_df)} mẫu, cần ít nhất 10 mẫu để huấn luyện mô hình.")
-        else:
-            # Chuẩn bị dữ liệu cho mô hình
-            X = filtered_df.drop('SalePrice', axis=1)
-            y = filtered_df['SalePrice']
+            # Sử dụng train.csv như trong notebook
+            df_train = load_train_data()
+            if df_train is not None:
+                st.info(f"📊 Sử dụng train.csv ({len(df_train)} samples) như trong notebook")
+                
+                # Sử dụng logic theo notebook để có kết quả tốt hơn
+                df_encoded = load_train_data_encoded()  # Sử dụng dữ liệu train.csv đã encoded
+                df_processed = preprocess_data_for_modeling(df_encoded)
             
-            # Feature selection
-            k_features = min(25, len(X.columns), len(filtered_df) - 1)
-            selector = SelectKBest(score_func=mutual_info_regression, k=k_features)
-            X_selected = selector.fit_transform(X, y)
-            selected_features = X.columns[selector.get_support()]
+            else:
+                st.error("Không thể tải dữ liệu train.csv. Vui lòng kiểm tra file train.csv")
+                st.stop()
             
-            # Chia dữ liệu
-            X_train, X_test, y_train, y_test = train_test_split(
-                X_selected, y, test_size=0.2, random_state=42
-            )
-        
-            # Huấn luyện các mô hình
-            models = {
-                'Linear Regression': LinearRegression(),
-                'Random Forest': RandomForestRegressor(random_state=42)
-            }
+            # Chuẩn bị dữ liệu
+            X = df_processed.drop('SalePrice', axis=1)
+            y = df_processed['SalePrice']
             
+            # Chọn features và chia train/test theo notebook
+            X_train, X_val, X_test, y_train, y_val, y_test, selected_features, scaler, selector = select_features_and_split(X, y, k=25)
+            
+            # Tạo copy để tránh lỗi numpy flags
+            X_train = X_train.copy()
+            X_val = X_val.copy()
+            X_test = X_test.copy()
+            y_train = y_train.copy()
+            y_val = y_val.copy()
+            y_test = y_test.copy()
+            
+            # Huấn luyện các mô hình theo notebook
+            models = {}
             results = {}
             
-            for name, model in models.items():
-                model.fit(X_train, y_train)
-                y_pred = model.predict(X_test)
+            # 1. Linear Regression
+            if "Linear Regression" in selected_models:
+                lr_model = LinearRegression()
+                lr_model.fit(X_train, y_train)
                 
-                mae = mean_absolute_error(y_test, y_pred)
-                mse = mean_squared_error(y_test, y_pred)
-                rmse = np.sqrt(mse)
-                r2 = r2_score(y_test, y_pred)
+                # Dự đoán trên validation và test
+                y_val_pred = lr_model.predict(X_val)
+                y_test_pred = lr_model.predict(X_test)
                 
-                results[name] = {
-                    'MAE': mae,
-                    'MSE': mse,
-                    'RMSE': rmse,
-                    'R²': r2,
-                    'predictions': y_pred
+                # Đánh giá
+                val_mae = mean_absolute_error(y_val, y_val_pred)
+                val_mse = mean_squared_error(y_val, y_val_pred)
+                val_rmse = np.sqrt(val_mse)
+                val_r2 = r2_score(y_val, y_val_pred)
+                
+                test_mae = mean_absolute_error(y_test, y_test_pred)
+                test_mse = mean_squared_error(y_test, y_test_pred)
+                test_rmse = np.sqrt(test_mse)
+                test_r2 = r2_score(y_test, y_test_pred)
+                
+                models['Linear Regression'] = lr_model
+                results['Linear Regression'] = {
+                    'MAE': test_mae,
+                    'MSE': test_mse,
+                    'RMSE': test_rmse,
+                    'R²': test_r2,
+                    'predictions': y_test_pred,
+                    'val_metrics': (val_mae, val_mse, val_rmse, val_r2)
+                }
+            
+            # 2. Random Forest
+            if "Random Forest" in selected_models:
+                rf_model = RandomForestRegressor(random_state=42, n_estimators=100)
+                rf_model.fit(X_train, y_train)
+                
+                # Dự đoán trên validation và test
+                y_val_pred = rf_model.predict(X_val)
+                y_test_pred = rf_model.predict(X_test)
+                
+                # Đánh giá
+                val_mae = mean_absolute_error(y_val, y_val_pred)
+                val_mse = mean_squared_error(y_val, y_val_pred)
+                val_rmse = np.sqrt(val_mse)
+                val_r2 = r2_score(y_val, y_val_pred)
+                
+                test_mae = mean_absolute_error(y_test, y_test_pred)
+                test_mse = mean_squared_error(y_test, y_test_pred)
+                test_rmse = np.sqrt(test_mse)
+                test_r2 = r2_score(y_test, y_test_pred)
+                
+                models['Random Forest'] = rf_model
+                results['Random Forest'] = {
+                    'MAE': test_mae,
+                    'MSE': test_mse,
+                    'RMSE': test_rmse,
+                    'R²': test_r2,
+                    'predictions': y_test_pred,
+                    'val_metrics': (val_mae, val_mse, val_rmse, val_r2)
+                }
+            
+            # 3. Polynomial Regression
+            if "Polynomial Regression" in selected_models:
+                poly_model = make_pipeline(PolynomialFeatures(degree=2), LinearRegression())
+                poly_model.fit(X_train, y_train)
+                
+                # Dự đoán trên validation và test
+                y_val_pred = poly_model.predict(X_val)
+                y_test_pred = poly_model.predict(X_test)
+                
+                # Đánh giá
+                val_mae = mean_absolute_error(y_val, y_val_pred)
+                val_mse = mean_squared_error(y_val, y_val_pred)
+                val_rmse = np.sqrt(val_mse)
+                val_r2 = r2_score(y_val, y_val_pred)
+                
+                test_mae = mean_absolute_error(y_test, y_test_pred)
+                test_mse = mean_squared_error(y_test, y_test_pred)
+                test_rmse = np.sqrt(test_mse)
+                test_r2 = r2_score(y_test, y_test_pred)
+                
+                models['Polynomial Regression'] = poly_model
+                results['Polynomial Regression'] = {
+                    'MAE': test_mae,
+                    'MSE': test_mse,
+                    'RMSE': test_rmse,
+                    'R²': test_r2,
+                    'predictions': y_test_pred,
+                    'val_metrics': (val_mae, val_mse, val_rmse, val_r2)
                 }
         
             # Hiển thị kết quả
             col1, col2 = st.columns(2)
             
             with col1:
-                st.markdown("### 📈 Kết quả mô hình")
+                st.markdown("### 📈 Kết quả mô hình (Test Set)")
+                st.info(f"📊 Sử dụng train.csv ({len(df_train)} samples) - {len(selected_features)} features được chọn")
                 
                 for name, metrics in results.items():
                     st.markdown(f"**{name}**")
                     st.metric("MAE", f"${metrics['MAE']:,.0f}")
                     st.metric("RMSE", f"${metrics['RMSE']:,.0f}")
                     st.metric("R²", f"{metrics['R²']:.4f}")
+                    
+                    # Hiển thị validation metrics
+                    val_mae, val_mse, val_rmse, val_r2 = metrics['val_metrics']
+                    st.markdown(f"*Validation: R² = {val_r2:.4f}*")
                     st.markdown("---")
+            
+            # Hiển thị features được chọn
+            with col2:
+                st.markdown("### 🔍 Features được chọn")
+                st.write("Các features quan trọng nhất được chọn:")
+                for i, feature in enumerate(selected_features[:10], 1):
+                    st.write(f"{i}. {feature}")
+                if len(selected_features) > 10:
+                    st.write(f"... và {len(selected_features) - 10} features khác")
             
             with col2:
                 st.markdown("### 🔍 So sánh dự đoán vs thực tế")
                 
-                # Scatter plot cho Random Forest (mô hình tốt nhất) - Tạo bằng go.Figure để có legend rõ ràng
-                fig = go.Figure()
-                
-                # Thêm scatter plot
-                fig.add_trace(go.Scatter(
-                    x=y_test,
-                    y=results['Random Forest']['predictions'],
-                    mode='markers',
-                    name='Dự đoán vs Thực tế',
-                    marker=dict(
-                        color='blue',
-                        size=8,
-                        opacity=0.7
+                # Scatter plot cho Random Forest (mô hình tốt nhất)
+                if 'Random Forest' in results:
+                    fig = go.Figure()
+                    
+                    # Thêm scatter plot
+                    fig.add_trace(go.Scatter(
+                        x=y_test,
+                        y=results['Random Forest']['predictions'],
+                        mode='markers',
+                        name='Dự đoán vs Thực tế',
+                        marker=dict(
+                            color='blue',
+                            size=8,
+                            opacity=0.7
+                        )
+                    ))
+                    
+                    # Thêm đường chéo
+                    min_val = min(y_test.min(), results['Random Forest']['predictions'].min())
+                    max_val = max(y_test.max(), results['Random Forest']['predictions'].max())
+                    fig.add_trace(go.Scatter(
+                        x=[min_val, max_val],
+                        y=[min_val, max_val],
+                        mode='lines',
+                        name='Đường chéo (Lý tưởng)',
+                        line=dict(color='red', dash='dash', width=2)
+                    ))
+                    
+                    fig.update_layout(
+                        title="Dự đoán vs Thực tế (Random Forest)",
+                        xaxis_title="Giá thực tế",
+                        yaxis_title="Giá dự đoán",
+                        height=400
                     )
-                ))
-                
-                # Thêm đường chéo
-                min_val = min(y_test.min(), results['Random Forest']['predictions'].min())
-                max_val = max(y_test.max(), results['Random Forest']['predictions'].max())
-                fig.add_trace(go.Scatter(
-                    x=[min_val, max_val],
-                    y=[min_val, max_val],
-                    mode='lines',
-                    name='Đường chéo (Lý tưởng)',
-                    line=dict(color='red', dash='dash', width=2)
-                ))
-                
-                fig.update_layout(
-                    title="Dự đoán vs Thực tế (Random Forest)",
-                    xaxis_title="Giá thực tế",
-                    yaxis_title="Giá dự đoán",
-                    height=400
-                )
-                fig = apply_chart_style(fig, chart_theme, show_grid, show_legend, color_scheme, chart_style)
-                st.plotly_chart(fig, use_container_width=True)
-        
+                    fig = apply_chart_style(fig, chart_theme, show_grid, show_legend, color_scheme, chart_style)
+                    st.plotly_chart(fig, use_container_width=True)
+            
             # Dự đoán giá nhà mới
             st.markdown("### 🎯 Dự đoán giá nhà mới")
             
             col1, col2 = st.columns(2)
             
             with col1:
-                overall_qual = st.slider("Chất lượng tổng thể", 1, 10, 5)
-                gr_liv_area = st.slider("Diện tích sinh hoạt (sqft)", 500, 4000, 1500)
-                total_bsmt_sf = st.slider("Diện tích tầng hầm (sqft)", 0, 3000, 1000)
-                year_built = st.slider("Năm xây dựng", 1900, 2010, 1970)
+                overall_qual = st.slider("Chất lượng tổng thể", 1, 10, 5, key="overall_qual_pred")
+                gr_liv_area = st.slider("Diện tích sinh hoạt (sqft)", 500, 4000, 1500, key="gr_liv_area_pred")
+                total_bsmt_sf = st.slider("Diện tích tầng hầm (sqft)", 0, 3000, 1000, key="total_bsmt_sf_pred")
+                year_built = st.slider("Năm xây dựng", 1900, 2010, 1970, key="year_built_pred")
             
             with col2:
-                garage_area = st.slider("Diện tích gara (sqft)", 0, 1000, 400)
-                lot_area = st.slider("Diện tích lô đất (sqft)", 1000, 50000, 10000)
-                full_bath = st.slider("Số phòng tắm đầy đủ", 0, 4, 2)
-                garage_cars = st.slider("Sức chứa xe trong gara", 0, 4, 2)
+                garage_area = st.slider("Diện tích gara (sqft)", 0, 1000, 400, key="garage_area_pred")
+                lot_area = st.slider("Diện tích lô đất (sqft)", 1000, 50000, 10000, key="lot_area_pred")
+                full_bath = st.slider("Số phòng tắm đầy đủ", 0, 4, 2, key="full_bath_pred")
+                garage_cars = st.slider("Sức chứa xe trong gara", 0, 4, 2, key="garage_cars_pred")
             
             if st.button("🔮 Dự đoán giá"):
-                # Tạo dữ liệu mẫu
-                sample_data = np.zeros((1, X_selected.shape[1]))
+                # Tạo dữ liệu mẫu với tất cả features
+                sample_data_full = np.zeros((1, len(X.columns)))
                 
                 # Cập nhật các giá trị được chọn
-                feature_names = selected_features.tolist()
+                feature_names = X.columns.tolist()
                 
                 # Tìm index của các features quan trọng
                 if 'OverallQual' in feature_names:
                     idx = feature_names.index('OverallQual')
-                    sample_data[0, idx] = overall_qual
+                    sample_data_full[0, idx] = overall_qual
                 
                 if 'GrLivArea' in feature_names:
                     idx = feature_names.index('GrLivArea')
-                    sample_data[0, idx] = gr_liv_area
+                    sample_data_full[0, idx] = gr_liv_area
                 
                 if 'TotalBsmtSF' in feature_names:
                     idx = feature_names.index('TotalBsmtSF')
-                    sample_data[0, idx] = total_bsmt_sf
+                    sample_data_full[0, idx] = total_bsmt_sf
                 
                 if 'YearBuilt' in feature_names:
                     idx = feature_names.index('YearBuilt')
-                    sample_data[0, idx] = year_built
+                    sample_data_full[0, idx] = year_built
                 
                 if 'GarageArea' in feature_names:
                     idx = feature_names.index('GarageArea')
-                    sample_data[0, idx] = garage_area
+                    sample_data_full[0, idx] = garage_area
                 
                 if 'LotArea' in feature_names:
                     idx = feature_names.index('LotArea')
-                    sample_data[0, idx] = lot_area
+                    sample_data_full[0, idx] = lot_area
                 
                 if 'FullBath' in feature_names:
                     idx = feature_names.index('FullBath')
-                    sample_data[0, idx] = full_bath
+                    sample_data_full[0, idx] = full_bath
                 
                 if 'GarageCars' in feature_names:
                     idx = feature_names.index('GarageCars')
-                    sample_data[0, idx] = garage_cars
+                    sample_data_full[0, idx] = garage_cars
                 
-                # Dự đoán
-                rf_prediction = models['Random Forest'].predict(sample_data)[0]
-                lr_prediction = models['Linear Regression'].predict(sample_data)[0]
+                # Áp dụng preprocessing giống như training
+                sample_data_scaled = scaler.transform(sample_data_full)
+                sample_data_selected = selector.transform(sample_data_scaled)
+                
+                # Dự đoán với các models đã train
+                predictions = {}
+                for name, model in models.items():
+                    pred = model.predict(sample_data_selected)[0]
+                    predictions[name] = pred
                 
                 st.success(f"🎯 **Dự đoán giá nhà:**")
-                st.metric("Random Forest", f"${rf_prediction:,.0f}")
-                st.metric("Linear Regression", f"${lr_prediction:,.0f}")
+                for name, pred in predictions.items():
+                    st.metric(name, f"${pred:,.0f}")
 
 else:
     st.error("Không thể tải dữ liệu. Vui lòng kiểm tra file house_price.csv")
+
+# Thông tin về dữ liệu được sử dụng
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 📁 Dữ liệu được sử dụng")
+st.sidebar.markdown("""
+- **Phân tích tổng quan**: house_price.csv
+- **Mô hình dự đoán**: train.csv (như trong notebook)
+""")
 
 # Footer
 st.markdown("---")
