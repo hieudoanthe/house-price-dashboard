@@ -44,6 +44,10 @@ st.markdown("""
     .sidebar .sidebar-content {
         background-color: #f8f9fa;
     }
+    .icon {
+        margin-right: 0.5rem;
+        font-size: 1.1em;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -178,7 +182,7 @@ def load_data():
 df = load_data()
 
 # Sidebar
-st.sidebar.title("🎛️ Điều khiển Dashboard")
+st.sidebar.title("🎛️ Điều khiển Dashboard", help="Các tùy chọn điều khiển dashboard")
 st.sidebar.markdown("---")
 
 if df is not None:
@@ -213,6 +217,81 @@ if df is not None:
         min_value=500,
         max_value=5000,
         value=(500, 5000)
+    )
+    
+    # Bộ lọc khu vực
+    neighborhood_filter = st.sidebar.multiselect(
+        "🏘️ Lọc theo khu vực",
+        ["Tất cả"] + list(df['Neighborhood'].unique()),
+        default=["Tất cả"]
+    )
+    
+    # Bộ lọc số phòng tắm
+    bathroom_filter = st.sidebar.slider(
+        "🚿 Lọc theo số phòng tắm đầy đủ",
+        min_value=int(df['FullBath'].min()),
+        max_value=int(df['FullBath'].max()),
+        value=(int(df['FullBath'].min()), int(df['FullBath'].max()))
+    )
+    
+    # Bộ lọc số xe trong gara
+    garage_filter = st.sidebar.slider(
+        "🚗 Lọc theo sức chứa xe trong gara",
+        min_value=int(df['GarageCars'].min()),
+        max_value=int(df['GarageCars'].max()),
+        value=(int(df['GarageCars'].min()), int(df['GarageCars'].max()))
+    )
+    
+    # Bộ lọc diện tích lô đất
+    lot_area_filter = st.sidebar.slider(
+        "🏞️ Lọc theo diện tích lô đất (sqft)",
+        min_value=int(df['LotArea'].min()),
+        max_value=int(df['LotArea'].max()),
+        value=(int(df['LotArea'].min()), int(df['LotArea'].max()))
+    )
+    
+    # Bộ lọc diện tích tầng hầm
+    basement_filter = st.sidebar.slider(
+        "🏠 Lọc theo diện tích tầng hầm (sqft)",
+        min_value=int(df['TotalBsmtSF'].min()),
+        max_value=int(df['TotalBsmtSF'].max()),
+        value=(int(df['TotalBsmtSF'].min()), int(df['TotalBsmtSF'].max()))
+    )
+    
+    # Bộ lọc diện tích gara
+    garage_area_filter = st.sidebar.slider(
+        "🚙 Lọc theo diện tích gara (sqft)",
+        min_value=int(df['GarageArea'].min()),
+        max_value=int(df['GarageArea'].max()),
+        value=(int(df['GarageArea'].min()), int(df['GarageArea'].max()))
+    )
+    
+    # Bộ lọc theo loại nhà
+    house_style_filter = st.sidebar.multiselect(
+        "🏘️ Lọc theo loại nhà",
+        ["Tất cả"] + list(df['HouseStyle'].unique()),
+        default=["Tất cả"]
+    )
+    
+    # Bộ lọc theo điều kiện bán
+    sale_condition_filter = st.sidebar.multiselect(
+        "💰 Lọc theo điều kiện bán",
+        ["Tất cả"] + list(df['SaleCondition'].unique()),
+        default=["Tất cả"]
+    )
+    
+    # Bộ lọc theo hệ thống sưởi
+    heating_filter = st.sidebar.multiselect(
+        "🔥 Lọc theo hệ thống sưởi",
+        ["Tất cả"] + list(df['Heating'].unique()),
+        default=["Tất cả"]
+    )
+    
+    # Bộ lọc theo hệ thống làm mát
+    cooling_filter = st.sidebar.multiselect(
+        "❄️ Lọc theo hệ thống làm mát",
+        ["Tất cả"] + list(df['CentralAir'].unique()),
+        default=["Tất cả"]
     )
 
     chart_theme = st.sidebar.selectbox(
