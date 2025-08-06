@@ -17,6 +17,11 @@ from sklearn.feature_selection import SelectKBest, mutual_info_regression
 import warnings
 warnings.filterwarnings('ignore')
 
+# Constants
+RANDOM_FOREST = "Random Forest"
+GIA_TRUNG_BINH = "Giá trung bình"
+LINEAR_REGRESSION = "Linear Regression"
+
 # Cấu hình trang
 st.set_page_config(
     page_title="Phân tích giá nhà - Dashboard",
@@ -452,8 +457,8 @@ if df is not None:
 
     selected_models = st.sidebar.multiselect(
         "🎯 Chọn mô hình dự đoán",
-        ["Linear Regression", "Random Forest", "Polynomial Regression"],
-        default=["Linear Regression", "Random Forest"]
+        [LINEAR_REGRESSION, RANDOM_FOREST, "Polynomial Regression"],
+        default=[LINEAR_REGRESSION, RANDOM_FOREST]
     )
 
     # Tùy chọn hiển thị dữ liệu
@@ -493,7 +498,7 @@ else:
     show_grid = True
     color_scheme = "Default"
     chart_style = "Standard"
-    selected_models = ["Linear Regression", "Random Forest"]
+    selected_models = [LINEAR_REGRESSION, RANDOM_FOREST]
     show_stats = True
     show_correlation = True
     show_outliers = False
@@ -651,14 +656,14 @@ if df is not None:
                 x=yearly_avg['YrSold'],
                 y=yearly_avg['SalePrice'],
                 mode='lines+markers',
-                name='Giá trung bình',
-                line=dict(color='red', width=3),
-                marker=dict(size=8)
+                name=GIA_TRUNG_BINH,
+                line={'color': 'red', 'width': 3},
+                marker={'size': 8}
             ))
             fig.update_layout(
                 title="Biến động giá nhà theo năm",
                 xaxis_title="Năm bán",
-                yaxis_title="Giá trung bình (USD)",
+                yaxis_title=f"{GIA_TRUNG_BINH} (USD)",
                 height=400
             )
             fig = apply_chart_style(fig, chart_theme, show_grid, show_legend, color_scheme, chart_style)
@@ -739,13 +744,13 @@ if df is not None:
         fig.add_trace(go.Bar(
             x=neighborhood_prices['Neighborhood_Name'],
             y=neighborhood_prices['SalePrice'],
-            name='Giá trung bình',
+            name=GIA_TRUNG_BINH,
             marker_color='lightgreen'
         ))
         fig.update_layout(
             title="Giá nhà trung bình theo khu vực",
             xaxis_title="Khu vực",
-            yaxis_title="Giá trung bình (USD)",
+            yaxis_title=f"{GIA_TRUNG_BINH} (USD)",
             xaxis=dict(tickangle=45),
             height=500
         )
@@ -858,7 +863,7 @@ if df is not None:
         # Thống kê theo chất lượng
         st.markdown("### 📊 Thống kê theo chất lượng")
         quality_stats = df_temp.groupby('Chất_lượng')['SalePrice'].agg(['count', 'mean', 'std']).round(2)
-        quality_stats.columns = ['Số lượng', 'Giá trung bình', 'Độ lệch chuẩn']
+        quality_stats.columns = ['Số lượng', GIA_TRUNG_BINH, 'Độ lệch chuẩn']
         st.dataframe(quality_stats, use_container_width=True)
     
     with tab4:
@@ -912,7 +917,6 @@ if df is not None:
             # Sử dụng train.csv như trong notebook
             df_train = load_train_data()
             if df_train is not None:
-                st.info(f"📊 Sử dụng train.csv ({len(df_train)} samples) như trong notebook")
                 
                 # Sử dụng logic theo notebook để có kết quả tốt hơn
                 df_encoded = load_train_data_encoded()  # Sử dụng dữ liệu train.csv đã encoded
@@ -942,7 +946,7 @@ if df is not None:
             results = {}
             
             # 1. Linear Regression
-            if "Linear Regression" in selected_models:
+            if LINEAR_REGRESSION in selected_models:
                 lr_model = LinearRegression()
                 lr_model.fit(X_train, y_train)
                 
@@ -961,8 +965,8 @@ if df is not None:
                 test_rmse = np.sqrt(test_mse)
                 test_r2 = r2_score(y_test, y_test_pred)
                 
-                models['Linear Regression'] = lr_model
-                results['Linear Regression'] = {
+                models[LINEAR_REGRESSION] = lr_model
+                results[LINEAR_REGRESSION] = {
                     'MAE': test_mae,
                     'MSE': test_mse,
                     'RMSE': test_rmse,
@@ -972,8 +976,13 @@ if df is not None:
                 }
             
             # 2. Random Forest
-            if "Random Forest" in selected_models:
-                rf_model = RandomForestRegressor(random_state=42, n_estimators=100)
+            if RANDOM_FOREST in selected_models:
+                rf_model = RandomForestRegressor(
+                    random_state=42, 
+                    n_estimators=100,
+                    min_samples_leaf=1,
+                    max_features='sqrt'
+                )
                 rf_model.fit(X_train, y_train)
                 
                 # Dự đoán trên validation và test
@@ -991,8 +1000,8 @@ if df is not None:
                 test_rmse = np.sqrt(test_mse)
                 test_r2 = r2_score(y_test, y_test_pred)
                 
-                models['Random Forest'] = rf_model
-                results['Random Forest'] = {
+                models[RANDOM_FOREST] = rf_model
+                results[RANDOM_FOREST] = {
                     'MAE': test_mae,
                     'MSE': test_mse,
                     'RMSE': test_rmse,
@@ -1003,7 +1012,7 @@ if df is not None:
             
             # 3. Polynomial Regression
             if "Polynomial Regression" in selected_models:
-                poly_model = make_pipeline(PolynomialFeatures(degree=2), LinearRegression())
+                poly_model = make_pipeline(PolynomialFeatures(degree=2, interaction_only=False), LinearRegression())
                 poly_model.fit(X_train, y_train)
                 
                 # Dự đoán trên validation và test
@@ -1035,8 +1044,7 @@ if df is not None:
             col1, col2 = st.columns(2)
             
             with col1:
-                st.markdown("### 📈 Kết quả mô hình (Test Set)")
-                st.info(f"📊 Sử dụng train.csv ({len(df_train)} samples) - {len(selected_features)} features được chọn")
+                st.markdown("### 📈 Kết quả mô hình")
                 
                 for name, metrics in results.items():
                     st.markdown(f"**{name}**")
@@ -1049,44 +1057,35 @@ if df is not None:
                     st.markdown(f"*Validation: R² = {val_r2:.4f}*")
                     st.markdown("---")
             
-            # Hiển thị features được chọn
-            with col2:
-                st.markdown("### 🔍 Features được chọn")
-                st.write("Các features quan trọng nhất được chọn:")
-                for i, feature in enumerate(selected_features[:10], 1):
-                    st.write(f"{i}. {feature}")
-                if len(selected_features) > 10:
-                    st.write(f"... và {len(selected_features) - 10} features khác")
-            
             with col2:
                 st.markdown("### 🔍 So sánh dự đoán vs thực tế")
                 
                 # Scatter plot cho Random Forest (mô hình tốt nhất)
-                if 'Random Forest' in results:
+                if RANDOM_FOREST in results:
                     fig = go.Figure()
                     
                     # Thêm scatter plot
                     fig.add_trace(go.Scatter(
                         x=y_test,
-                        y=results['Random Forest']['predictions'],
+                        y=results[RANDOM_FOREST]['predictions'],
                         mode='markers',
                         name='Dự đoán vs Thực tế',
-                        marker=dict(
-                            color='blue',
-                            size=8,
-                            opacity=0.7
-                        )
+                        marker={
+                            'color': 'blue',
+                            'size': 8,
+                            'opacity': 0.7
+                        }
                     ))
                     
                     # Thêm đường chéo
-                    min_val = min(y_test.min(), results['Random Forest']['predictions'].min())
-                    max_val = max(y_test.max(), results['Random Forest']['predictions'].max())
+                    min_val = min(y_test.min(), results[RANDOM_FOREST]['predictions'].min())
+                    max_val = max(y_test.max(), results[RANDOM_FOREST]['predictions'].max())
                     fig.add_trace(go.Scatter(
                         x=[min_val, max_val],
                         y=[min_val, max_val],
                         mode='lines',
                         name='Đường chéo (Lý tưởng)',
-                        line=dict(color='red', dash='dash', width=2)
+                        line={'color': 'red', 'dash': 'dash', 'width': 2}
                     ))
                     
                     fig.update_layout(
@@ -1171,14 +1170,6 @@ if df is not None:
 
 else:
     st.error("Không thể tải dữ liệu. Vui lòng kiểm tra file house_price.csv")
-
-# Thông tin về dữ liệu được sử dụng
-st.sidebar.markdown("---")
-st.sidebar.markdown("### 📁 Dữ liệu được sử dụng")
-st.sidebar.markdown("""
-- **Phân tích tổng quan**: house_price.csv
-- **Mô hình dự đoán**: train.csv (như trong notebook)
-""")
 
 # Footer
 st.markdown("---")
